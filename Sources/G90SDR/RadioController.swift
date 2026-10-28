@@ -10,6 +10,7 @@ final class RadioController: ObservableObject {
     @Published var frequencyHz: Int = 0
     @Published var mode: RadioMode?
     @Published var sMeter: Int = 0          // 0...255 raw
+    @Published var sMeterPeak: Int = 0      // peak hold, decays slowly
 
     private let serial = SerialPort()
     private let queue = DispatchQueue(label: "g90sdr.civ")
@@ -93,7 +94,12 @@ final class RadioController: ObservableObject {
         publish {
             if let freq { self.frequencyHz = freq }
             if let mode { self.mode = mode }
-            if let s { self.sMeter = s }
+            if let s {
+                self.sMeter = s
+                self.sMeterPeak = max(s, self.sMeterPeak - 6)
+            } else {
+                self.sMeterPeak = max(self.sMeter, self.sMeterPeak - 6)
+            }
         }
     }
 

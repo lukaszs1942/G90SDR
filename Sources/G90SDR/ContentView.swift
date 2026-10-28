@@ -73,10 +73,7 @@ struct ContentView: View {
                 ForEach(RadioMode.allCases) { Text($0.label).tag(RadioMode?.some($0)) }
             }
 
-            VStack(alignment: .leading) {
-                Text("S-meter").font(.caption)
-                ProgressView(value: Double(min(radio.sMeter, 255)), total: 255)
-            }
+            SMeterView(value: radio.sMeter, peak: radio.sMeterPeak)
             Spacer()
         }
     }
