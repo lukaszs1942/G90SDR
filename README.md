@@ -5,6 +5,7 @@ macOS (SwiftUI) app to control a Xiegu G90 over its CAT cable and show an audio 
 ## What it does
 - **CAT control** (CI-V, 19200 baud, radio address `0x70`): read/set frequency, read/set mode, S-meter, band and tuning-step buttons.
 - **Waterfall** (0–4 kHz): FFT of the radio's audio output captured through a sound card.
+- **CW decoder**: decodes Morse from the same audio (Goertzel tone detector, adaptive 5–40+ WPM timing). Pitch follows the strongest tone in 300–1200 Hz (Auto pitch) or can be set by hand; a marker on the waterfall shows it.
 - **Audio monitor**: plays the received audio through the default output (Listen toggle + volume).
 
 ## Waterfall limitation
@@ -18,3 +19,5 @@ Needs only the Xcode Command Line Tools (no full Xcode).
     open build/G90SDR.app
 
 `@State` is avoided on purpose: its macro plugin is not part of the Command Line Tools.
+
+Check the decoder against synthetic Morse with `scripts/test-cw.sh`.

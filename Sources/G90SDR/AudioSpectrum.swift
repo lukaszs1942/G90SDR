@@ -62,6 +62,10 @@ final class AudioSpectrum: ObservableObject {
 
     /// Called on the main thread with one row of dB values (low → high frequency).
     var onRow: (([Float]) -> Void)?
+    /// Called on the audio thread with each captured block (for decoders that need the raw samples).
+    var onSamples: ((UnsafeBufferPointer<Float>, Double) -> Void)?
+    /// Width of one FFT bin in Hz; valid once capture has started.
+    private(set) var binHz: Double = 0
 
     private let engine = AVAudioEngine()
     // Separate engine for playback so the capture device and the output device can differ.
@@ -116,10 +120,12 @@ final class AudioSpectrum: ObservableObject {
         let format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0 else { error = "Input device has no valid format"; return }
         let sampleRate = format.sampleRate
+        binHz = sampleRate / Double(Self.fftSize)
         preparePlayback(format: format)
         input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
             guard let self, let ch = buffer.floatChannelData?[0] else { return }
             if self.monitor { self.enqueueForPlayback(buffer) }
+            self.onSamples?(UnsafeBufferPointer(start: ch, count: Int(buffer.frameLength)), sampleRate)
             self.accumulator.append(contentsOf: UnsafeBufferPointer(start: ch, count: Int(buffer.frameLength)))
             while self.accumulator.count >= Self.fftSize {
                 let row = self.fft(Array(self.accumulator.prefix(Self.fftSize)), sampleRate: sampleRate)

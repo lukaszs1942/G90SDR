@@ -9,6 +9,7 @@ struct ContentView: View {
     @StateObject private var radio = RadioController()
     @StateObject private var audio = AudioSpectrum()
     @StateObject private var waterfall = Waterfall()
+    @StateObject private var cw = CWDecoder()
     @StateObject private var entry = FrequencyEntry()
 
     private let bands: [(String, Int)] = [
@@ -21,12 +22,20 @@ struct ContentView: View {
             controls.frame(width: 300)
             VStack(alignment: .leading) {
                 audioBar
-                WaterfallView(waterfall: waterfall)
+                WaterfallView(waterfall: waterfall,
+                              marker: cw.enabled ? cw.pitch / AudioSpectrum.maxFrequency : nil)
+                cwPanel
             }
         }
         .padding()
         .frame(minWidth: 960, minHeight: 640)
-        .onAppear { audio.onRow = { waterfall.push($0) } }
+        .onAppear {
+            audio.onRow = { row in
+                waterfall.push(row)
+                cw.observe(row: row, binHz: audio.binHz)
+            }
+            audio.onSamples = { samples, rate in cw.process(samples, sampleRate: rate) }
+        }
     }
 
     private var controls: some View {
@@ -100,6 +109,32 @@ struct ContentView: View {
                 Slider(value: $waterfall.ceilingDB, in: -80...0)
             }
             if let e = audio.error { Text(e).font(.caption).foregroundStyle(.red) }
+        }
+    }
+
+    private var cwPanel: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Toggle("CW decoder", isOn: $cw.enabled)
+                    Circle()
+                        .fill(cw.keyed ? Color.green : Color.gray.opacity(0.3))
+                        .frame(width: 10, height: 10)
+                    Text("\(cw.wpm) WPM").font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary)
+                    Spacer()
+                    Toggle("Auto pitch", isOn: $cw.autoPitch)
+                    Button("Clear") { cw.clear() }
+                }
+                HStack {
+                    Text("Pitch \(Int(cw.pitch)) Hz").font(.system(.caption, design: .monospaced)).frame(width: 90, alignment: .leading)
+                    Slider(value: $cw.pitch, in: 300...1200).disabled(cw.autoPitch)
+                }
+                Text(String(cw.text.suffix(400)))
+                    .font(.system(size: 14, design: .monospaced))
+                    .frame(maxWidth: .infinity, minHeight: 64, maxHeight: 64, alignment: .bottomLeading)
+                    .padding(6)
+                    .background(RoundedRectangle(cornerRadius: 6).fill(Color.black.opacity(0.35)))
+            }
         }
     }
 

@@ -54,6 +54,8 @@ final class Waterfall: ObservableObject {
 
 struct WaterfallView: View {
     @ObservedObject var waterfall: Waterfall
+    /// Optional vertical marker (e.g. the CW pitch) as a fraction of the width, 0...1.
+    var marker: Double? = nil
 
     var body: some View {
         VStack(spacing: 4) {
@@ -78,6 +80,14 @@ struct WaterfallView: View {
                     Image(decorative: image, scale: 1)
                         .resizable()
                         .interpolation(.none)
+                }
+                if let marker {
+                    GeometryReader { geo in
+                        Rectangle()
+                            .fill(Color.white.opacity(0.7))
+                            .frame(width: 1)
+                            .offset(x: geo.size.width * CGFloat(min(max(marker, 0), 1)))
+                    }
                 }
             }
 
