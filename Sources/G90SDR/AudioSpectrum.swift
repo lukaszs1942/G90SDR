@@ -56,11 +56,20 @@ final class AudioSpectrum: ObservableObject {
     @Published var selectedDevice: AudioDeviceID = 0
     @Published var running = false
     @Published var error: String?
+    /// Play the received audio through the default output while capturing it.
+    @Published var monitor = true
+    @Published var volume: Float = 0.8 { didSet { player.volume = volume } }
 
     /// Called on the main thread with one row of dB values (low → high frequency).
     var onRow: (([Float]) -> Void)?
 
     private let engine = AVAudioEngine()
+    // Separate engine for playback so the capture device and the output device can differ.
+    private let playEngine = AVAudioEngine()
+    private let player = AVAudioPlayerNode()
+    private var playerAttached = false
+    private let pendingLock = NSLock()
+    private var pendingBuffers = 0
     private var accumulator: [Float] = []
     private let log2n = vDSP_Length(11)
     private let setup: FFTSetup
@@ -90,6 +99,8 @@ final class AudioSpectrum: ObservableObject {
 
     func stop() {
         if engine.isRunning { engine.stop(); engine.inputNode.removeTap(onBus: 0) }
+        player.stop()
+        playEngine.stop()
         running = false
     }
 
@@ -105,8 +116,10 @@ final class AudioSpectrum: ObservableObject {
         let format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0 else { error = "Input device has no valid format"; return }
         let sampleRate = format.sampleRate
+        preparePlayback(format: format)
         input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
             guard let self, let ch = buffer.floatChannelData?[0] else { return }
+            if self.monitor { self.enqueueForPlayback(buffer) }
             self.accumulator.append(contentsOf: UnsafeBufferPointer(start: ch, count: Int(buffer.frameLength)))
             while self.accumulator.count >= Self.fftSize {
                 let row = self.fft(Array(self.accumulator.prefix(Self.fftSize)), sampleRate: sampleRate)
@@ -120,6 +133,39 @@ final class AudioSpectrum: ObservableObject {
         } catch {
             input.removeTap(onBus: 0)
             self.error = error.localizedDescription
+        }
+    }
+
+    private func preparePlayback(format: AVAudioFormat) {
+        if !playerAttached { playEngine.attach(player); playerAttached = true }
+        playEngine.disconnectNodeOutput(player)
+        playEngine.connect(player, to: playEngine.mainMixerNode, format: format)
+        player.volume = volume
+        pendingBuffers = 0
+        do {
+            try playEngine.start()
+            player.play()
+        } catch {
+            self.error = "Audio output failed: \(error.localizedDescription)"
+        }
+    }
+
+    /// Called on the audio thread. Copies the tap buffer (it is reused) and queues it on the player.
+    private func enqueueForPlayback(_ buffer: AVAudioPCMBuffer) {
+        pendingLock.lock()
+        let backlog = pendingBuffers
+        if backlog < 8 { pendingBuffers += 1 }
+        pendingLock.unlock()
+        guard backlog < 8,   // drop audio rather than let latency build up if the clocks drift
+              let copy = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: buffer.frameLength),
+              let src = buffer.floatChannelData, let dst = copy.floatChannelData else { return }
+        copy.frameLength = buffer.frameLength
+        for c in 0..<Int(buffer.format.channelCount) {
+            memcpy(dst[c], src[c], Int(buffer.frameLength) * MemoryLayout<Float>.size)
+        }
+        player.scheduleBuffer(copy) { [weak self] in
+            guard let self else { return }
+            self.pendingLock.lock(); self.pendingBuffers -= 1; self.pendingLock.unlock()
         }
     }
 

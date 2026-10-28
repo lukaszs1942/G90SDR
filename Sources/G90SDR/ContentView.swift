@@ -92,6 +92,11 @@ struct ContentView: View {
                 Button(audio.running ? "Stop" : "Start") { audio.running ? audio.stop() : audio.start() }
             }
             HStack {
+                Toggle("Listen", isOn: $audio.monitor)
+                Image(systemName: "speaker.wave.2")
+                Slider(value: $audio.volume, in: 0...1).frame(maxWidth: 200)
+            }
+            HStack {
                 Text("Floor").font(.caption)
                 Slider(value: $waterfall.floorDB, in: -140...(-40))
                 Text("Ceiling").font(.caption)
